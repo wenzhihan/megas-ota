@@ -125,7 +125,7 @@ list_files | while IFS= read -r SRC; do
         OLD_MD5=-
     fi
     printf '  %-62s -> /%-58s mode=%s  old=%s  new=%s\n' \
-        "$REL" "$REL" "$MD" "$OLD_STATE" "${NEW_MD5:0:12}"
+        "$REL" "$REL" "$MD" "$OLD_STATE" "$(printf '%s' "$NEW_MD5" | cut -c1-12)"
 done
 
 if [ "$MODE" != "--apply" ]; then
@@ -163,7 +163,7 @@ for SRC in $(list_files); do
     fi
     printf '%s\t%s\t%s\t%s\t%s\n' "$REL" "$MD" "$OLD_STATE" "$OLD_MD5" "$NEW_MD5" >> "$BACKUP/manifest.tsv"
     OK=$((OK+1))
-    log "  OK /$REL (mode=$MD, md5=${NEW_MD5:0:12})"
+    log "  OK /$REL (mode=$MD, md5=$(printf '%s' "$NEW_MD5" | cut -c1-12))"
 done
 
 log "覆盖完成: $OK 个文件，0 失败"
