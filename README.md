@@ -4,8 +4,26 @@ MEGAS 系列设备（MEGA S / MEGA 系列 SOC 板）的 **OTA 升级脚本** 与
 
 所有升级脚本、升级包及其校验信息集中在此维护，按版本号归档，可直接通过 HTTPS 拉取，无需账号登录。
 
-> 当前状态：仓库已初始化，**仅含一个用于链路验证的虚假升级包**（`packages/v9.9.9/`），
-> 不可用于真实升级。真实升级包待补充。
+> 当前状态：仓库已初始化，包含**链路验证假包**与 **MCU A/B 双槽 OTA 测试包**。
+> 全部包均为 `fake: true` 的测试产物，**不可用于真实量产升级**。
+> **当前可用 MCU 包 = `packages/v9.9.16/`**（实时进度条 + 抗干扰 + 自动回退）。
+
+### 版本矩阵
+
+| 版本 | 大小 | 状态 | 说明 |
+|---|---|---|---|
+| v9.9.9 | 1732 B | ✅ 链路验证 | 纯假包，验证设备能否从 GitHub 拉包/拉脚本 |
+| v9.9.10 | 281190 B | ❌ 作废 | `flash_mcu` 整片擦写路线（ISP 打不通，会冲掉 bootloader） |
+| v9.9.11 | 388365 B | ⚠️ 历史 | 首版 A/B 双槽 OTA，未停服务 |
+| v9.9.12 | 388803 B | ❌ 作废 | 「停服务」未生效（cat 无权停 root 的 Core） |
+| v9.9.13 | 389755 B | ❌ 作废 | 修了 sudo，但 `dd` 撞 root 属主临时目录 |
+| v9.9.14 | 390379 B | ⚠️ 历史 | 修好停服务 + PID 隔离目录 + 防中断时的孤儿进程 |
+| v9.9.15 | 390824 B | ⚠️ 历史 | OTA 传输中 SIGTERM 可安全恢复，已实测 |
+| **v9.9.16** | **608547 B** | ✅ **当前可用** | + 实时进度条、串口独占守卫、3 次重试、自动回退、双版本镜像 |
+
+> 包内不含任何 RK3568/SOC 镜像，纯 MCU 升级。
+> v9.9.16 起包内自带 `megamcu_1.0.0.4.bin` 与 `megamcu_1.0.0.5.bin`，
+> 回退不依赖设备上残留文件。
 
 ---
 
@@ -30,9 +48,14 @@ megas-ota/
 ├── scripts/
 │   └── runUpdate-github-test.sh   # 链路验证版（固件源指向本仓库，真实升级动作已注释）
 ├── packages/
-│   └── v9.9.9/
-│       ├── Firmware-MegaS-9.9.9.zip          # 虚假测试包，勿用于真机升级
-│       └── Firmware-MegaS-9.9.9.zip.sha256
+│   ├── v9.9.9/                               # 链路验证假包
+│   │   ├── Firmware-MegaS-9.9.9.zip
+│   │   └── Firmware-MegaS-9.9.9.zip.sha256
+│   └── v9.9.16/                              # 当前 MCU 包（解包后为单层目录）
+│       ├── Firmware-MegaS-9.9.16.zip
+│       └── Firmware-MegaS-9.9.16.zip.sha256
+│           # zip 内: MegaTest / megamcu_1.0.0.{4,5}.bin /
+│           #        deploy_mcu.sh / lib_ota.sh / ota_once.py / manifest.json / README.txt
 ├── docs/
 │   ├── CHANGELOG.md
 │   └── upgrade-guide.md
