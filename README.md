@@ -4,7 +4,8 @@ MEGAS 系列设备（MEGA S / MEGA 系列 SOC 板）的 **OTA 升级脚本** 与
 
 所有升级脚本、升级包及其校验信息集中在此维护，按版本号归档，可直接通过 HTTPS 拉取，无需账号登录。
 
-> 仓库状态：**已完成初始化，内容待补充**。当前仅含本说明文件，暂未放入任何脚本或升级包。
+> 当前状态：仓库已初始化，**仅含一个用于链路验证的虚假升级包**（`packages/v9.9.9/`），
+> 不可用于真实升级。真实升级包待补充。
 
 ---
 
@@ -12,9 +13,9 @@ MEGAS 系列设备（MEGA S / MEGA 系列 SOC 板）的 **OTA 升级脚本** 与
 
 | 类别 | 说明 |
 |---|---|
-| 升级脚本 | 部署到设备端执行的 OTA 流程脚本（拉包、校验、解包、写入、切换分区、重启、回滚） |
-| 升级包 | 实际下发的固件 / 根文件系统压缩包（`.tar.gz` / `.zip` / `.img` 等） |
-| 校验文件 | 每个包对应的 `.sha256`，用于完整性校验 |
+| 升级脚本 | 设备端 `runUpdate.sh`（拉包、校验、解包、切换、重启、回滚） |
+| 升级包 | 实际下发的固件压缩包（`.zip`，内含 `newCore` 与运行时文件） |
+| 校验文件 | 每个包对应的同名 `.sha256`，**脚本下载后强制校验** |
 | 说明文档 | 版本变更说明、升级注意事项、回滚方法 |
 
 **不存放**：源码、编译中间产物、调试日志、许可证密钥、任何设备私钥。
@@ -25,50 +26,47 @@ MEGAS 系列设备（MEGA S / MEGA 系列 SOC 板）的 **OTA 升级脚本** 与
 
 ```
 megas-ota/
-├── README.md                  # 本文件
-├── scripts/                   # 设备端 OTA 脚本
-│   ├── ota_upgrade.sh         # 主升级流程
-│   ├── ota_rollback.sh        # 回滚
-│   └── ota_verify.sh          # 包完整性 / 兼容性校验
-├── packages/                  # 升级包，按版本号分目录
-│   └── vX.Y.Z/
-│       ├── megas-ota-vX.Y.Z.tar.gz
-│       └── megas-ota-vX.Y.Z.tar.gz.sha256
-├── docs/                      # 版本说明与操作手册
+├── README.md
+├── scripts/
+│   └── runUpdate-github-test.sh   # 链路验证版（固件源指向本仓库，真实升级动作已注释）
+├── packages/
+│   └── v9.9.9/
+│       ├── Firmware-MegaS-9.9.9.zip          # 虚假测试包，勿用于真机升级
+│       └── Firmware-MegaS-9.9.9.zip.sha256
+├── docs/
 │   ├── CHANGELOG.md
 │   └── upgrade-guide.md
-└── tools/                     # 可选：打包 / 批量下发辅助脚本
+└── tools/
 ```
 
 - `scripts/` 与 `packages/` 严格分离：脚本与包分开升级，避免每次只改脚本也要动大包。
-- `packages/` 下 **一个版本一个目录**，禁止在同目录混放不同版本。
+- `packages/` 下 **一个版本一个目录**，禁止同目录混放不同版本。
 - 单个大文件（> 50 MB）建议走 **Git LFS** 或 Releases 附件，避免仓库膨胀。
 
 ---
 
 ## 3. 命名规范
 
-### 升级包
+### 升级包（与 `runUpdate.sh` 强绑定）
 
 ```
-megas-ota-v<主>.<次>.<修订>[-<硬件型号>][-<通道>].tar.gz
+packages/v<版本>/Firmware-<版本>.zip            # Mega
+packages/v<版本>/Firmware-MegaS-<版本>.zip      # MegaS（megaS 开关）
+packages/v<版本>/Firmware-MegaS-<版本>.zip.sha256
 ```
 
-示例：
+脚本内部拼的就是这两个名字，**不要改名**：
 
-```
-megas-ota-v1.2.0-megas.tar.gz          # MEGA S 正式通道
-megas-ota-v1.2.0-megas-beta.tar.gz     # MEGA S 测试通道
-megas-ota-v1.2.0-mega2io.tar.gz        # LubanCat-2IO 机型
+```bash
+ZIP_NAME="Firmware-$VERSION.zip"        # Mega
+ZIP_NAME="Firmware-MegaS-$VERSION.zip"  # MegaS
+PKG_DIR="packages/v$VERSION"
 ```
 
 ### 版本号
 
-遵循语义化版本 `MAJOR.MINOR.PATCH`：
-
-- `MAJOR`：不兼容变更（分区布局、升级协议变更）
-- `MINOR`：新增功能，向后兼容
-- `PATCH`：缺陷修复，向后兼容
+必须 **纯数字点分**（`MAJOR.MINOR.PATCH`）。`runUpdate.sh` 的版本比较用
+`((10#$a < 10#$b))`，带 `-beta` 之类的后缀会触发算术错误。
 
 ### 标签
 
@@ -78,19 +76,23 @@ megas-ota-v1.2.0-mega2io.tar.gz        # LubanCat-2IO 机型
 
 ## 4. 升级包内容要求
 
-一个合规的升级包 **必须** 包含：
+```
+Firmware-MegaS-<版本>.zip
+└── Firmware-MegaS-<版本>/        # 单层目录，脚本会自动识别为载荷根
+    ├── newCore                   # 必需，脚本会改名为 Core
+    ├── manifest.json
+    ├── post-install.sh           # 可选
+    └── ...                       # 其余运行时文件（plugins/ 等）
+```
 
-```
-manifest.json          # 机型、版本、目标分区、依赖版本、sha256
-rootfs.ext4.gz         # 或实际镜像文件
-post-install.sh        # 可选，安装后钩子（须可重复执行、失败可回滚）
-```
+脚本的解包逻辑：若解压后顶层「只有一个目录且无其它条目」，就把该目录当载荷根；
+否则用解压目录本身。因此**单层目录是推荐形态**。
 
 `manifest.json` 最小字段示例：
 
 ```json
 {
-  "product": "megas",
+  "product": "megaS",
   "version": "1.2.0",
   "channel": "stable",
   "min_from_version": "1.0.0",
@@ -104,9 +106,9 @@ post-install.sh        # 可选，安装后钩子（须可重复执行、失败�
 **约束**
 
 - 包内禁止绝对路径、禁止 `..` 越界（解包前脚本需做路径检查）。
-- 升级脚本必须校验 `manifest.json` 中的 `product` 与设备实际机型一致，不匹配直接退出。
-- 必须支持失败回滚：升级前后记录当前槽位 / 分区，失败时切回原分区。
-- 升级过程中不得断电；脚本需提示并保留日志到 `/userdata/ota/`。
+- `product` 必须与设备 `8080/discover` 返回的 `productName` 一致，不匹配直接退出。
+- 必须支持失败回滚：升级前把 `Core` 备份为 `Core.bak`，失败时切回。
+- 升级过程中不得断电；日志保留在 `/tmp/update_tmp/`。
 
 ---
 
@@ -115,52 +117,54 @@ post-install.sh        # 可选，安装后钩子（须可重复执行、失败�
 ### 5.1 下载
 
 ```bash
-# 单个包（直链，公开仓库无需认证）
-curl -fLO https://raw.githubusercontent.com/wenzhihan/megas-ota/main/packages/v1.2.0/megas-ota-v1.2.0-megas.tar.gz
+# 直链（公开仓库无需认证）
+curl -fLO https://raw.githubusercontent.com/wenzhihan/megas-ota/main/packages/v9.9.9/Firmware-MegaS-9.9.9.zip
+curl -fLO https://raw.githubusercontent.com/wenzhihan/megas-ota/main/packages/v9.9.9/Firmware-MegaS-9.9.9.zip.sha256
 
-# 整仓库（浅克隆）
 git clone --depth 1 https://github.com/wenzhihan/megas-ota.git
 ```
 
 ### 5.2 校验
 
 ```bash
-sha256sum -c megas-ota-v1.2.0-megas.tar.gz.sha256
+sha256sum -c Firmware-MegaS-9.9.9.zip.sha256
 ```
 
 ### 5.3 升级（设备端）
 
 ```bash
-# 建议先停业务进程，避免升级中被占用
-systemctl stop ntmega
-sh /home/cat/ota/ota_upgrade.sh /home/cat/ota/megas-ota-v1.2.0-megas.tar.gz
+# MDH 侧会自动 wget 脚本；手动执行等价于：
+cd /tmp
+wget -O runUpdate.sh https://raw.githubusercontent.com/wenzhihan/megas-ota/main/scripts/runUpdate-github-test.sh
+chmod 777 runUpdate.sh
+sudo ./runUpdate.sh megaS 9.9.9 1
 ```
+
+参数：`[dev] [megaS] <version> <choice>`，`choice` 0=null / 1=soc / 2=mcu / 3=soc+mcu。
 
 ### 5.4 回滚
 
 ```bash
-sh /home/cat/ota/ota_rollback.sh
+sudo mv -f /home/cat/pub/Core.bak /home/cat/pub/Core && sudo reboot
 ```
-
-> 具体命令以后续提交的脚本为准，本节为约定占位。
 
 ---
 
 ## 6. 发布流程
 
-1. 在 `packages/vX.Y.Z/` 下新增升级包与 `.sha256`；
+1. 在 `packages/vX.Y.Z/` 下新增 `Firmware-*.zip` 与 `.sha256`；
 2. 在 `docs/CHANGELOG.md` 记录变更点、影响范围、注意事项；
 3. 提交并打 tag：`git tag -a vX.Y.Z -m "..."` → `git push origin vX.Y.Z`；
-4. 在 GitHub 该 tag 上创建 Release，粘贴 `CHANGELOG` 对应段落；
-5. 通知测试 / 产线，附上升级包直链与校验值。
+4. 在 GitHub 该 tag 上创建 Release；
+5. 通知测试 / 产线，附直链与校验值。
 
 ---
 
 ## 7. 安全与合规
 
-- 本仓库 **公开可读**，任何人可下载；因此 **严禁** 提交：私钥、证书私钥、设备序列号清单、客户信息、内部 IP / 口令。
+- 本仓库 **公开可读**，任何人可下载；严禁提交私钥、序列号清单、客户信息、内部 IP / 口令。
 - 升级包若含敏感配置，请单独维护在私有仓库，仅在此放公开部分。
-- 发现包被污染或版本错误，立即在 `docs/CHANGELOG.md` 标注作废，并删除对应文件 + 重新发布 PATCH 版本。
+- 发现包被污染或版本错误，立即在 `docs/CHANGELOG.md` 标注作废 + 重新发布 PATCH 版本。
 
 ---
 
@@ -175,6 +179,22 @@ sh /home/cat/ota/ota_rollback.sh
 
 - [x] 仓库创建（public）
 - [x] 目录与命名规范定义
-- [ ] `scripts/` 升级脚本（待提交）
-- [ ] `packages/` 首个升级包（待提交）
+- [x] `scripts/runUpdate-github-test.sh`（固件源指向本仓库，**真实升级动作已注释**，DRY-RUN）
+- [x] `packages/v9.9.9/Firmware-MegaS-9.9.9.zip`（**虚假测试包**，`manifest.json` 内 `fake: true`）
+- [ ] 真实升级包（待提交）
 - [ ] `docs/CHANGELOG.md`（待提交）
+
+### 虚假测试包说明
+
+`packages/v9.9.9/` 里的包仅用于验证「设备能否从 GitHub 拉包」，内容为：
+
+| 文件 | 说明 |
+|---|---|
+| `newCore` | 纯文本占位脚本，**不是可执行固件** |
+| `manifest.json` | `fake: true`，`partitions: []` |
+| `post-install.sh` | 只打印，不做任何事 |
+| `README.txt` | 包内警告说明 |
+
+`scripts/runUpdate-github-test.sh` 里 `kill_old_processes` / 备份覆盖 `/home/cat/pub` /
+`chmod` / `./Core -v` / `reboot` 全部注释，只做 下载 → sha256 校验 → 解压 → 载荷体检 → 打印。
+**不要在真实设备上用它替换正式 `runUpdate.sh`。**
