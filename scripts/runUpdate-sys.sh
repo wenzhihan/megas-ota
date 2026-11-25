@@ -13,7 +13,7 @@
 # =====================================================================
 set -u
 
-VER="${1:-9.9.19}"
+VER="${1:-9.9.20}"
 NO_REBOOT=0
 [ "${2:-}" = "--no-reboot" ] && NO_REBOOT=1
 
@@ -70,7 +70,7 @@ $SUDO sh "$ROOT/deploy_sys.sh" "$ROOT" --apply > "$WORK/deploy.log" 2>&1
 DRC=$?
 cat "$WORK/deploy.log"
 [ "$DRC" -eq 0 ] || die "deploy_sys.sh 失败 rc=$DRC"
-BACKUP=$(grep '备份目录:' "$WORK/deploy.log" | tail -1 | awk '{print $2}')
+BACKUP=$(grep '备份目录:' "$WORK/deploy.log" | tail -1 | grep -o '/home/cat/pub/backup_sys/[0-9_]*' | head -1)
 echo "BACKUP=$BACKUP" >> "$STATE"
 [ -n "$BACKUP" ] || die "未找到备份目录"
 
