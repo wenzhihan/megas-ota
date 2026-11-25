@@ -13,7 +13,7 @@
 # =====================================================================
 set -u
 
-VER="${1:-9.9.20}"
+VER="${1:-9.9.21}"
 NO_REBOOT=0
 [ "${2:-}" = "--no-reboot" ] && NO_REBOOT=1
 
@@ -45,10 +45,20 @@ echo "VERSION=$VER" >> "$STATE"
 echo "BOOT_BEFORE=$BOOT_BEFORE" >> "$STATE"
 echo "STARTED=$(date '+%F %T')" >> "$STATE"
 
+# 重启后板子 RTC 可能回退到 2024（NTP 未同步），HTTPS 证书会判 "not yet valid"。
+# 与 MDH 原版一致，必须 --no-check-certificate；并先等网络真正就绪。
+log "== 1a. 等待网络就绪（GitHub raw）=="
+i=0
+while [ $i -lt 30 ]; do
+    wget -q --spider --no-check-certificate --timeout=5 "$BASE/$PKG.zip.sha256" && break
+    sleep 2; i=$((i+1))
+done
+[ "$i" -lt 30 ] || die "网络不可达（等了 60s）"
+
 log "== 1. 下载 $PKG.zip =="
 TS=$(date +%s)
-wget -q -O "$WORK/$PKG.zip" "$BASE/$PKG.zip?t=$TS" || die "下载失败"
-wget -q -O "$WORK/$PKG.zip.sha256" "$BASE/$PKG.zip.sha256?t=$TS" || die "sha256 下载失败"
+wget -q --no-check-certificate --timeout=20 --tries=3 -O "$WORK/$PKG.zip" "$BASE/$PKG.zip?t=$TS" || die "下载失败"
+wget -q --no-check-certificate --timeout=20 --tries=3 -O "$WORK/$PKG.zip.sha256" "$BASE/$PKG.zip.sha256?t=$TS" || die "sha256 下载失败"
 log "   $(stat -c %s "$WORK/$PKG.zip") B"
 
 log "== 2. sha256 校验 =="
