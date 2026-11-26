@@ -4,9 +4,10 @@ MEGAS 系列设备（MEGA S / MEGA 系列 SOC 板）的 **OTA 升级脚本** 与
 
 所有升级脚本、升级包及其校验信息集中在此维护，按版本号归档，可直接通过 HTTPS 拉取，无需账号登录。
 
-> 当前状态：仓库已初始化，包含**链路验证假包**与 **MCU A/B 双槽 OTA 测试包**。
+> 当前状态：仓库包含**链路验证假包**、**MCU A/B 双槽 OTA 测试包**与**系统文件覆盖式升级包**。
 > 全部包均为 `fake: true` 的测试产物，**不可用于真实量产升级**。
 > **当前可用 MCU 包 = `packages/v9.9.16/`**（实时进度条 + 抗干扰 + 自动回退）。
+> **当前可用系统包 = `packages/v9.9.22/`**（RNDIS 环境 + sshd 加固，含重启）。
 
 ### 版本矩阵
 
@@ -24,7 +25,8 @@ MEGAS 系列设备（MEGA S / MEGA 系列 SOC 板）的 **OTA 升级脚本** 与
 | v9.9.18 | 50019 B | ❌ 作废 | 含重启入口，但 `deploy_sys.sh` 用了 bash 专有 `${var:0:12}`，设备 dash 报 Bad substitution |
 | v9.9.19 | 50025 B | ❌ 作废 | 修净 dash 兼容，但 `BACKUP` 日志取词错误导致 `--verify` 失败 |
 | v9.9.20 | 50057 B | ⚠️ 历史 | 修好备份路径解析；但重启后 RTC 回退 2024 导致 HTTPS 证书校验失败、wget 下载失败 |
-| **v9.9.21** | **50338 B** | ✅ **当前系统包** | `wget --no-check-certificate` + 网络就绪等待（对齐 MDH 原版）；完整入口覆盖 → 激活 → **重启** |
+| v9.9.21 | 50338 B | ⚠️ 历史 | `wget --no-check-certificate` + 网络就绪等待（对齐 MDH 原版）；完整入口覆盖 → 激活 → **重启** |
+| **v9.9.22** | **53065 B** | ✅ **当前系统包** | v9.9.21 + `etc/ssh/sshd_config.d/99-megas-ota.conf` + `ssh_harden.sh`：`UseDNS no` / `MaxStartups 100:30:200` / `LoginGraceTime 30`，解决重启循环后 `Exceeded MaxStartups`；覆盖后 `sshd -t`/`-T` 双重校验 + 自动回滚，失败则**不重启** |
 
 > v9.9.16 是 MCU A/B 双槽 OTA（不含任何 RK3568/SOC 镜像）；
 > v9.9.17 是系统文件覆盖（zip 内 `etc/` `home/` 即目标绝对路径去掉首个 `/`），
