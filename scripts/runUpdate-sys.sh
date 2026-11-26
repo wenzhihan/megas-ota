@@ -3,17 +3,18 @@
 # MEGAS 系统升级入口（含重启）—— runUpdate-sys.sh
 #
 # 用法: sudo sh runUpdate-sys.sh [version] [--no-reboot]
-#   默认 version=9.9.18；默认【会重启系统】
+#   默认 version=9.9.22；默认【会重启系统】
+#   v9.9.22 新增：覆盖后、重启前应用 sshd 加固（防 MaxStartups 阻塞）
 #
 # 流程: 从 GitHub 拉包 -> sha256 校验 -> 解包 -> deploy_sys.sh --apply
-#       -> 激活(systemd enable / nmcli reload) -> 延迟 3s 重启
+#       -> 激活(systemd enable / nmcli reload) -> sshd 加固 -> 延迟 3s 重启
 #
 # ★ 重启会断开 SSH，本脚本用 setsid 后台触发 reboot，
 #   由上位机轮询设备重新上线并读取 /home/cat/rndis_upgrade_state 验收。
 # =====================================================================
 set -u
 
-VER="${1:-9.9.21}"
+VER="${1:-9.9.22}"
 NO_REBOOT=0
 [ "${2:-}" = "--no-reboot" ] && NO_REBOOT=1
 
@@ -90,6 +91,21 @@ $SUDO systemctl enable mega-vnic.service >/dev/null 2>&1 || die "enable 失败"
 $SUDO nmcli connection reload >/dev/null 2>&1 || log "  (nmcli reload 不可用，跳过)"
 log "   enabled=$($SUDO systemctl is-enabled mega-vnic.service 2>/dev/null)"
 echo "ENABLED=$($SUDO systemctl is-enabled mega-vnic.service 2>/dev/null)" >> "$STATE"
+
+log "== 5b. 应用 sshd 加固（防重启后 MaxStartups 阻塞）=="
+if [ -f "$ROOT/ssh_harden.sh" ]; then
+    $SUDO sh "$ROOT/ssh_harden.sh" > "$WORK/ssh_harden.log" 2>&1
+    HRC=$?
+    cat "$WORK/ssh_harden.log"
+    [ "$HRC" -eq 0 ] || die "ssh_harden.sh 失败 rc=$HRC（已回滚 sshd_config，本次不重启）"
+    echo "SSH_HARDEN=OK" >> "$STATE"
+    SSH_EFF=$($SUDO /usr/sbin/sshd -T 2>/dev/null | grep -iE '^(usedns|maxstartups|logingracetime) ' | tr '\n' ';')
+    echo "SSH_EFF=$SSH_EFF" >> "$STATE"
+    log "   $SSH_EFF"
+else
+    log "  (包内无 ssh_harden.sh，跳过)"
+    echo "SSH_HARDEN=SKIPPED" >> "$STATE"
+fi
 
 log "== 6. 校验已覆盖文件 =="
 $SUDO sh "$ROOT/deploy_sys.sh" "$ROOT" --verify "$BACKUP" >> "$WORK/deploy.log" 2>&1
